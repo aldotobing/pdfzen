@@ -11,6 +11,7 @@ import {
   FileText,
   Github,
   LayoutGrid,
+  Lock,
   Merge,
   RefreshCw,
   ShieldCheck,
@@ -29,8 +30,9 @@ import { mergePDFs } from "@/utils/pdfMerger";
 import SplashScreen from "@/components/splash/SplashScreen";
 import { useOneTimeSplash } from "@/hooks/use-one-time-splash";
 import PageEditor from "@/components/PageEditor";
+import SecurityTools from "@/components/SecurityTools";
 
-type Mode = "compress" | "merge" | "edit";
+type Mode = "compress" | "merge" | "edit" | "security";
 
 type WorkFile = {
   id: string;
@@ -111,6 +113,7 @@ export default function HomePage() {
   const [mergeResult, setMergeResult] = useState<MergeResult | null>(null);
   const [notice, setNotice] = useState("Upload PDF files to get started.");
   const [editingFile, setEditingFile] = useState<File | null>(null);
+  const [securityFile, setSecurityFile] = useState<File | null>(null);
   const { showSplash, appReady } = useOneTimeSplash({ durationMs: 1800 });
 
   const clearCompressionResults = useCallback(() => {
@@ -389,6 +392,12 @@ export default function HomePage() {
                   icon={<LayoutGrid size={14} />}
                   label="Edit Pages"
                   onClick={() => setMode("edit")}
+                />
+                <ModeButton
+                  active={mode === "security"}
+                  icon={<Lock size={14} />}
+                  label="Security"
+                  onClick={() => setMode("security")}
                 />
               </div>
 
@@ -700,6 +709,48 @@ export default function HomePage() {
                     )}
                 </div>
               )}
+
+              {mode === "security" && (
+                <div>
+                  <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-slate-500">Security Tools</h2>
+                  <p className="mt-2 text-sm text-slate-600">
+                    Protect your PDFs with passwords, watermarks, or redact sensitive content.
+                  </p>
+
+                  {files.length > 0 ? (
+                    <div className="mt-4 space-y-2">
+                      {files.map((entry) => (
+                        <div
+                          key={entry.id}
+                          className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <FileText size={14} className="text-slate-500" />
+                              <p className="truncate text-sm font-medium text-slate-800">{entry.file.name}</p>
+                            </div>
+                            <p className="mt-1 text-xs text-slate-500">
+                              {formatBytes(entry.file.size)}
+                              {entry.pageCount !== null ? ` | ${entry.pageCount} pages` : " | scanning pages..."}
+                            </p>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => setSecurityFile(entry.file)}
+                            className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
+                          >
+                            <Lock size={14} />
+                            Security Tools
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-4 text-sm text-slate-500">No files for security tools. Upload PDF files first.</p>
+                  )}
+                </div>
+              )}
             </section>
           </div>
         </div>
@@ -707,6 +758,9 @@ export default function HomePage() {
         <AnimatePresence>
           {editingFile && (
             <PageEditor file={editingFile} onClose={() => setEditingFile(null)} />
+          )}
+          {securityFile && (
+            <SecurityTools file={securityFile} onClose={() => setSecurityFile(null)} />
           )}
         </AnimatePresence>
 

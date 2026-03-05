@@ -1,4 +1,4 @@
-import { PDFDocument, degrees, PageSizes } from "pdf-lib";
+import { PDFDocument, degrees, rgb, StandardFonts } from "pdf-lib";
 
 /**
  * Extract specific pages from a PDF into a new PDF.
@@ -193,4 +193,154 @@ export async function applyPdfPageOperations(
   }
 
   return currentPdf as unknown as Blob;
+}
+
+/**
+ * Note: Password protection requires additional libraries (e.g., hummus-pdf or qpdf).
+ * This is a placeholder for future implementation.
+ */
+export async function protectPdfWithPassword(
+  file: File,
+  password: string
+): Promise<Blob> {
+  throw new Error("Password protection requires server-side processing. This feature is coming soon.");
+}
+
+export async function removePdfPassword(
+  file: File,
+  password: string
+): Promise<Blob> {
+  throw new Error("Password removal requires server-side processing. This feature is coming soon.");
+}
+
+export interface WatermarkOptions {
+  text?: string;
+  fontSize?: number;
+  color?: { r: number; g: number; b: number };
+  opacity?: number;
+  rotation?: number;
+  position?: 'center' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'tile';
+  scale?: number;
+}
+
+/**
+ * Add a text watermark to a PDF.
+ * @param file - The source PDF file
+ * @param options - Watermark configuration options
+ * @returns A Blob representing the watermarked PDF
+ */
+export async function addWatermarkToPdf(
+  file: File,
+  options: WatermarkOptions
+): Promise<Blob> {
+  const arrayBuffer = await file.arrayBuffer();
+  const pdfDoc = await PDFDocument.load(arrayBuffer);
+  const pages = pdfDoc.getPages();
+  
+  const {
+    text = 'CONFIDENTIAL',
+    fontSize = 48,
+    color = { r: 0.5, g: 0.5, b: 0.5 },
+    opacity = 0.3,
+    rotation = 45,
+    position = 'center',
+    scale = 1,
+  } = options;
+
+  pages.forEach((page) => {
+    const { width, height } = page.getSize();
+    const rgbColor = rgb(color.r, color.g, color.b);
+    
+    if (position === 'tile') {
+      // Tile watermark across the page
+      const stepX = width / 3;
+      const stepY = height / 3;
+      
+      for (let x = stepX / 2; x < width; x += stepX) {
+        for (let y = stepY / 2; y < height; y += stepY) {
+          page.drawText(text, {
+            x,
+            y,
+            size: fontSize * scale,
+            color: rgbColor,
+            opacity,
+            rotate: degrees(rotation),
+          });
+        }
+      }
+    } else {
+      // Single watermark at position
+      let x = width / 2;
+      let y = height / 2;
+      
+      switch (position) {
+        case 'top-left':
+          x = 50;
+          y = height - 50;
+          break;
+        case 'top-right':
+          x = width - 200;
+          y = height - 50;
+          break;
+        case 'bottom-left':
+          x = 50;
+          y = 50;
+          break;
+        case 'bottom-right':
+          x = width - 200;
+          y = 50;
+          break;
+        case 'center':
+        default:
+          x = width / 2 - (text.length * fontSize * scale) / 4;
+          y = height / 2;
+          break;
+      }
+      
+      page.drawText(text, {
+        x,
+        y,
+        size: fontSize * scale,
+        color: rgbColor,
+        opacity,
+        rotate: degrees(rotation),
+      });
+    }
+  });
+
+  const pdfBytes = await pdfDoc.save();
+  return new Blob([pdfBytes.buffer as ArrayBuffer], { type: "application/pdf" });
+}
+
+/**
+ * Redact (permanently remove) content from specific page areas.
+ * @param file - The source PDF file
+ * @param redactions - Array of redaction rectangles {pageIndex, x, y, width, height}
+ * @returns A Blob representing the redacted PDF
+ */
+export async function redactPdfPages(
+  file: File,
+  redactions: Array<{ pageIndex: number; x: number; y: number; width: number; height: number }>
+): Promise<Blob> {
+  const arrayBuffer = await file.arrayBuffer();
+  const pdfDoc = await PDFDocument.load(arrayBuffer);
+  const pages = pdfDoc.getPages();
+
+  redactions.forEach((redaction) => {
+    if (redaction.pageIndex >= 0 && redaction.pageIndex < pages.length) {
+      const page = pages[redaction.pageIndex];
+
+      // Draw black rectangle over the area
+      page.drawRectangle({
+        x: redaction.x,
+        y: redaction.y,
+        width: redaction.width,
+        height: redaction.height,
+        color: rgb(0, 0, 0),
+      });
+    }
+  });
+
+  const pdfBytes = await pdfDoc.save();
+  return new Blob([pdfBytes.buffer as ArrayBuffer], { type: "application/pdf" });
 }
