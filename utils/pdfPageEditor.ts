@@ -215,7 +215,7 @@ export async function protectPdfWithPassword(
   // Use pdf-encrypt-lite to add password protection
   const encryptedPdf = await encryptPDF(new Uint8Array(arrayBuffer), password, password);
 
-  return new Blob([encryptedPdf], { type: "application/pdf" });
+  return new Blob([encryptedPdf.buffer as ArrayBuffer], { type: "application/pdf" });
 }
 
 /**
