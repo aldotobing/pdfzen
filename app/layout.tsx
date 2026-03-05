@@ -1,51 +1,57 @@
 import "./globals.css";
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Plus_Jakarta_Sans, Sora } from "next/font/google";
 import type React from "react";
 
-const inter = Inter({ subsets: ["latin"] });
+const plusJakartaSans = Plus_Jakarta_Sans({
+  subsets: ["latin"],
+  variable: "--font-sans",
+});
+
+const sora = Sora({
+  subsets: ["latin"],
+  variable: "--font-display",
+});
 
 export const metadata: Metadata = {
-  title: "PDF Utility Tool - Compress & Merge PDFs Online",
+  title: "Shrink, Merge, and Ship PDFs Faster | Private PDF Workspace",
   description:
-    "Compress and merge your PDF files easily and efficiently with our free and fast online tool. Reduce file sizes for storage and sharing, or merge multiple PDFs into one for seamless organization.",
-  generator: "Aldo Tobing",
+    "A professional PDF workspace to compress and merge files with speed, clarity, and local-first privacy.",
+  generator: "PDF Zen Studio",
   keywords: [
-    "PDF utility",
     "PDF compressor",
-    "merge PDF",
+    "PDF merger",
     "compress PDF",
-    "reduce PDF size",
-    "free PDF tool",
-    "PDF optimization",
-    "merge PDFs",
+    "merge PDF",
+    "private PDF workspace",
+    "local PDF tools",
   ],
-  applicationName: "PDF Utility Tool",
+  applicationName: "PDF Zen Studio",
   openGraph: {
-    title: "PDF Utility Tool - Compress & Merge PDFs Online",
+    title: "Shrink, Merge, and Ship PDFs Faster | Private PDF Workspace",
     description:
-      "Compress and merge your PDF files easily and efficiently without losing quality. Free and fast online tool for optimizing your PDFs.",
-    url: "https://pdf-compress.aldotobing.online",
-    siteName: "PDF Utility Tool",
+      "Compress and merge PDF files in a streamlined local workspace without uploading your documents.",
+    url: "https://pdfzen.vercel.app",
+    siteName: "PDF Zen Studio",
     images: [
       {
-        url: "https://pdf-compress.aldotobing.online/assets/img/pdf.jpg",
+        url: "https://pdfzen.vercel.app/assets/img/pdf.jpg",
         width: 1200,
         height: 630,
-        alt: "PDF Utility Tool Preview",
+        alt: "PDF Zen Studio Preview",
       },
     ],
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "PDF Utility Tool - Compress & Merge PDFs Online",
+    title: "Shrink, Merge, and Ship PDFs Faster | Private PDF Workspace",
     description:
-      "Compress and merge your PDF files easily and efficiently without losing quality.",
-    images: ["https://pdf-compress.aldotobing.online/assets/img/pdf.jpg"],
+      "Compress and merge PDF files locally with a polished, professional workflow.",
+    images: ["https://pdfzen.vercel.app/assets/img/pdf.jpg"],
   },
   alternates: {
-    canonical: "https://pdf-compress.aldotobing.online",
+    canonical: "https://pdfzen.vercel.app",
   },
 };
 
@@ -67,17 +73,19 @@ export default function RootLayout({
             __html: JSON.stringify({
               "@context": "https://schema.org",
               "@type": "WebApplication",
-              name: "PDF Utility Tool",
-              url: "https://pdf-compress.aldotobing.online",
+              name: "PDF Zen Studio",
+              url: "https://pdfzen.vercel.app",
               description:
-                "Compress and merge your PDF files easily and efficiently with our free online tool.",
+                "Professional local PDF workspace for compressing and merging files.",
               applicationCategory: "Utility",
               operatingSystem: "All",
             }),
           }}
         />
       </head>
-      <body className={inter.className}>{children}</body>
+      <body className={`${plusJakartaSans.variable} ${sora.variable}`}>
+        {children}
+      </body>
     </html>
   );
 }

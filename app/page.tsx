@@ -1,381 +1,733 @@
 "use client";
 
-import { useState } from "react";
-import dynamic from "next/dynamic";
-import { motion, AnimatePresence } from "framer-motion";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useDropzone } from "react-dropzone";
+import { AnimatePresence, motion } from "framer-motion";
+import {
+  ArrowDown,
+  ArrowUp,
+  Download,
+  FileArchive,
+  FileText,
+  Merge,
+  RefreshCw,
+  ShieldCheck,
+  Trash2,
+  UploadCloud,
+  WandSparkles,
+} from "lucide-react";
+import JSZip from "jszip";
+import { saveAs } from "file-saver";
+import { PDFDocument } from "pdf-lib";
 
-const FileUploader = dynamic(() => import("../components/FileUploader"), {
-  ssr: false,
-});
+import type { CompressionLevel } from "@/types";
+import { compressPDF } from "@/utils/pdfCompressor";
+import { mergePDFs } from "@/utils/pdfMerger";
+import SplashScreen from "@/components/splash/SplashScreen";
+import { useOneTimeSplash } from "@/hooks/use-one-time-splash";
 
-import CompressionOptions from "../components/CompressionOptions";
-import CompressionProgress from "../components/CompressionProgress";
-import { compressPDF } from "../utils/pdfCompressor";
-import { mergePDFs } from "../utils/pdfMerger";
-import type { CompressedFile, CompressionLevel } from "../types";
-import DownloadSection from "../components/DownloadSection";
-import { FiPlus } from "react-icons/fi";
+type Mode = "compress" | "merge";
 
-import "react-pdf/dist/Page/AnnotationLayer.css";
-import "react-pdf/dist/Page/TextLayer.css";
+type WorkFile = {
+  id: string;
+  file: File;
+  pageCount: number | null;
+};
 
-export default function Home() {
-  const [files, setFiles] = useState<File[]>([]);
-  const [compressedFiles, setCompressedFiles] = useState<CompressedFile[]>([]);
-  const [mergedFile, setMergedFile] = useState<Blob | null>(null);
-  const [mergeFileName, setMergeFileName] = useState<string>("");
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [progress, setProgress] = useState<number[]>([]);
-  const [currentMode, setCurrentMode] = useState<"compress" | "merge">(
-    "compress"
-  );
+type CompressionResult = {
+  id: string;
+  name: string;
+  originalSize: number;
+  compressedSize: number;
+  blob: Blob;
+  url: string;
+};
 
-  const compressionPresets = {
-    low: 20,
-    medium: 50,
-    high: 80,
-  };
+type MergeResult = {
+  name: string;
+  size: number;
+  url: string;
+};
 
-  const [compressionLevel, setCompressionLevel] = useState<number>(
-    compressionPresets.medium
-  );
+type CompressionPresetMeta = {
+  label: string;
+  targetReduction: number;
+  colorClass: string;
+  tooltip: string;
+};
 
-  const handleFileUpload = (uploadedFiles: File[]) => {
-    setFiles((prevFiles) => {
-      const newFiles = [...prevFiles, ...uploadedFiles].slice(0, 5);
-      setProgress(new Array(newFiles.length).fill(0));
-      return newFiles;
+const MAX_FILES = 20;
+
+const PRESET_META: Record<CompressionLevel, CompressionPresetMeta> = {
+  low: {
+    label: "Archive",
+    targetReduction: 25,
+    colorClass: "bg-emerald-500",
+    tooltip: "Best for signed contracts, presentations, and documents where visual fidelity matters most.",
+  },
+  medium: {
+    label: "Balanced",
+    targetReduction: 45,
+    colorClass: "bg-sky-500",
+    tooltip: "Recommended for day-to-day sharing. Good size reduction without obvious quality loss.",
+  },
+  high: {
+    label: "Web",
+    targetReduction: 70,
+    colorClass: "bg-rose-500",
+    tooltip: "Use when upload speed and file size are priority, such as forms, drafts, or quick review files.",
+  },
+};
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return "0 Bytes";
+  const units = ["Bytes", "KB", "MB", "GB"];
+  const power = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  return `${(bytes / 1024 ** power).toFixed(power === 0 ? 0 : 2)} ${units[power]}`;
+}
+
+function getFileSignature(file: File): string {
+  return `${file.name}-${file.size}-${file.lastModified}`;
+}
+
+function makeId(): string {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+export default function HomePage() {
+  const [mode, setMode] = useState<Mode>("compress");
+  const [files, setFiles] = useState<WorkFile[]>([]);
+  const [compressionLevel, setCompressionLevel] = useState<CompressionLevel>("medium");
+  const [progressMap, setProgressMap] = useState<Record<string, number>>({});
+  const [isWorking, setIsWorking] = useState(false);
+  const [compressionResults, setCompressionResults] = useState<CompressionResult[]>([]);
+  const [mergeResult, setMergeResult] = useState<MergeResult | null>(null);
+  const [notice, setNotice] = useState("Upload PDF files to get started.");
+  const { showSplash, appReady } = useOneTimeSplash({ durationMs: 1800 });
+
+  const clearCompressionResults = useCallback(() => {
+    setCompressionResults((prev) => {
+      prev.forEach((result) => URL.revokeObjectURL(result.url));
+      return [];
     });
-  };
+  }, []);
 
-  const handleRemoveFile = (index: number) => {
-    setFiles((prevFiles) => prevFiles.filter((_, i) => i !== index));
-  };
+  const clearMergeResult = useCallback(() => {
+    setMergeResult((prev) => {
+      if (prev) URL.revokeObjectURL(prev.url);
+      return null;
+    });
+  }, []);
 
-  const handleCompress = async () => {
-    setIsProcessing(true);
-    const compressed: CompressedFile[] = [];
-    const levelKey =
-      (Object.entries(compressionPresets).find(
-        ([, value]) => value === compressionLevel
-      )?.[0] as CompressionLevel) || "medium";
-
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      try {
-        const result = await compressPDF(file, levelKey, (p) => {
-          setProgress((prev) => {
-            const newProgress = [...prev];
-            newProgress[i] = p;
-            return newProgress;
-          });
-        });
-        compressed.push({
-          originalFile: file,
-          compressedSize: result.size,
-          downloadUrl: URL.createObjectURL(result),
-        });
-      } catch (error) {
-        console.error(`Error compressing ${file.name}:`, error);
-      }
-    }
-    setCompressedFiles(compressed);
-    setIsProcessing(false);
-  };
-
-  const handleMerge = async () => {
-    if (files.length === 0) return;
-    setIsProcessing(true);
-    try {
-      const result = await mergePDFs(files);
-      setMergedFile(result);
-      const uniqueName =
-        "merged_" + new Date().toISOString().replace(/[:.-]/g, "") + ".pdf";
-      setMergeFileName(uniqueName);
-    } catch (error) {
-      console.error("Error merging PDFs:", error);
-    }
-    setIsProcessing(false);
-  };
-
-  // Reset all states without reloading the page
-  const handleReset = () => {
-    // Clean up object URLs for compressed files
-    compressedFiles.forEach((file) => URL.revokeObjectURL(file.downloadUrl));
-
-    // Clean up merged file URL if needed
-    if (mergedFile) {
-      const mergedFileUrl = URL.createObjectURL(mergedFile);
-      URL.revokeObjectURL(mergedFileUrl);
-    }
-
-    // Then reset the states
+  const resetSession = useCallback(() => {
+    clearCompressionResults();
+    clearMergeResult();
     setFiles([]);
-    setCompressedFiles([]);
-    setMergedFile(null);
-    setMergeFileName("");
-    setProgress([]);
-    setIsProcessing(false);
-  };
+    setProgressMap({});
+    setNotice("Session reset.");
+  }, [clearCompressionResults, clearMergeResult]);
 
-  const actionButtonClasses =
-    "mt-8 w-full bg-blue-600 text-white py-3 rounded-lg font-bold shadow-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed";
+  const removeDuplicates = useCallback(() => {
+    setFiles((prev) => {
+      const seen = new Set<string>();
+      const next = prev.filter((entry) => {
+        const signature = getFileSignature(entry.file);
+        if (seen.has(signature)) return false;
+        seen.add(signature);
+        return true;
+      });
+
+      const removed = prev.length - next.length;
+      setNotice(removed > 0 ? `Removed ${removed} duplicate file${removed > 1 ? "s" : ""}.` : "No duplicates found.");
+      return next;
+    });
+  }, []);
+
+  const addFiles = useCallback(
+    async (incomingFiles: File[]) => {
+      const accepted = incomingFiles.filter((file) => file.type === "application/pdf");
+
+      if (!accepted.length) {
+        setNotice("Only PDF files are accepted.");
+        return;
+      }
+
+      const existing = new Set(files.map((entry) => getFileSignature(entry.file)));
+      const unique = accepted.filter((file) => !existing.has(getFileSignature(file)));
+
+      if (!unique.length) {
+        setNotice("All selected files are already in the queue.");
+        return;
+      }
+
+      const slots = Math.max(0, MAX_FILES - files.length);
+      const batch = unique.slice(0, slots);
+
+      if (!batch.length) {
+        setNotice(`Queue limit reached (${MAX_FILES} files).`);
+        return;
+      }
+
+      const draft = batch.map((file) => ({ id: makeId(), file, pageCount: null }));
+      setFiles((prev) => [...prev, ...draft]);
+      setNotice(`Added ${batch.length} file${batch.length > 1 ? "s" : ""}.`);
+
+      await Promise.all(
+        draft.map(async (entry) => {
+          try {
+            const bytes = await entry.file.arrayBuffer();
+            const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
+            const pages = doc.getPageCount();
+            setFiles((prev) => prev.map((file) => (file.id === entry.id ? { ...file, pageCount: pages } : file)));
+          } catch {
+            setFiles((prev) => prev.map((file) => (file.id === entry.id ? { ...file, pageCount: 0 } : file)));
+          }
+        })
+      );
+    },
+    [files]
+  );
+
+  const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
+    noClick: true,
+    onDrop: (dropped) => {
+      void addFiles(dropped);
+    },
+    accept: { "application/pdf": [".pdf"] },
+    maxFiles: MAX_FILES,
+  });
+
+  const moveFile = useCallback((index: number, direction: -1 | 1) => {
+    setFiles((prev) => {
+      const target = index + direction;
+      if (target < 0 || target >= prev.length) return prev;
+      const next = [...prev];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  }, []);
+
+  const removeFile = useCallback((id: string) => {
+    setFiles((prev) => prev.filter((entry) => entry.id !== id));
+    setProgressMap((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  }, []);
+
+  const recommendedLevel = useMemo<CompressionLevel>(() => {
+    const totalSize = files.reduce((sum, entry) => sum + entry.file.size, 0);
+    const averagePages =
+      files.length > 0
+        ? files.reduce((sum, entry) => sum + (entry.pageCount ?? 0), 0) / files.length
+        : 0;
+
+    if (totalSize > 50 * 1024 * 1024 || averagePages > 35) return "high";
+    if (totalSize < 8 * 1024 * 1024 && averagePages < 10) return "low";
+    return "medium";
+  }, [files]);
+
+  const totalSize = useMemo(() => files.reduce((sum, entry) => sum + entry.file.size, 0), [files]);
+  const totalPages = useMemo(() => files.reduce((sum, entry) => sum + (entry.pageCount ?? 0), 0), [files]);
+
+  const compressionStats = useMemo(() => {
+    const original = compressionResults.reduce((sum, result) => sum + result.originalSize, 0);
+    const compressed = compressionResults.reduce((sum, result) => sum + result.compressedSize, 0);
+    const saved = Math.max(0, original - compressed);
+    const savedPct = original > 0 ? (saved / original) * 100 : 0;
+    return { original, compressed, saved, savedPct };
+  }, [compressionResults]);
+
+  const handleCompress = useCallback(async () => {
+    if (!files.length) {
+      setNotice("Add at least one PDF before compressing.");
+      return;
+    }
+
+    setIsWorking(true);
+    clearCompressionResults();
+    clearMergeResult();
+    setProgressMap({});
+
+    try {
+      const results: CompressionResult[] = [];
+
+      for (const entry of files) {
+        const blob = await compressPDF(entry.file, compressionLevel, (progress) => {
+          setProgressMap((prev) => ({ ...prev, [entry.id]: progress }));
+        });
+
+        results.push({
+          id: entry.id,
+          name: entry.file.name,
+          originalSize: entry.file.size,
+          compressedSize: blob.size,
+          blob,
+          url: URL.createObjectURL(blob),
+        });
+      }
+
+      setCompressionResults(results);
+      setNotice(`Compression complete for ${results.length} file${results.length > 1 ? "s" : ""}.`);
+    } catch (error) {
+      console.error(error);
+      setNotice("Compression failed for one or more files.");
+    } finally {
+      setIsWorking(false);
+    }
+  }, [clearCompressionResults, clearMergeResult, compressionLevel, files]);
+
+  const handleZipDownload = useCallback(async () => {
+    if (!compressionResults.length) return;
+
+    const zip = new JSZip();
+    compressionResults.forEach((result) => {
+      zip.file(`compressed_${result.name}`, result.blob);
+    });
+
+    const zipBlob = await zip.generateAsync({ type: "blob" });
+    saveAs(zipBlob, "compressed_pdfs.zip");
+  }, [compressionResults]);
+
+  const handleMerge = useCallback(async () => {
+    if (!files.length) {
+      setNotice("Add files before merging.");
+      return;
+    }
+
+    setIsWorking(true);
+    clearCompressionResults();
+    clearMergeResult();
+
+    try {
+      const mergedBlob = await mergePDFs(files.map((entry) => entry.file));
+      const url = URL.createObjectURL(mergedBlob);
+      const name = `merged_${new Date().toISOString().replace(/[:.-]/g, "")}.pdf`;
+
+      setMergeResult({ name, size: mergedBlob.size, url });
+      setNotice("Merge complete.");
+    } catch (error) {
+      console.error(error);
+      setNotice("Merge failed. Check if files are valid PDFs.");
+    } finally {
+      setIsWorking(false);
+    }
+  }, [clearCompressionResults, clearMergeResult, files]);
+
+  useEffect(() => {
+    return () => {
+      compressionResults.forEach((result) => URL.revokeObjectURL(result.url));
+      if (mergeResult) URL.revokeObjectURL(mergeResult.url);
+    };
+  }, [compressionResults, mergeResult]);
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-blue-100 to-gray-50 py-12 px-4 sm:px-6 lg:px-8 font-inter">
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
-        className="max-w-4xl mx-auto"
+    <>
+      <AnimatePresence>{showSplash ? <SplashScreen /> : null}</AnimatePresence>
+      <motion.main
+        initial={false}
+        animate={{
+          opacity: appReady ? 1 : 0,
+          y: appReady ? 0 : 10,
+          filter: appReady ? "blur(0px)" : "blur(4px)",
+        }}
+        transition={{ duration: 0.45, ease: "easeOut" }}
+        className={`min-h-screen bg-slate-100 text-slate-900 ${appReady ? "pointer-events-auto" : "pointer-events-none"}`}
       >
-        <motion.h1
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="text-2xl sm:text-3xl md:text-5xl font-extrabold text-center text-gray-900 mb-4 anti-aliasing"
-        >
-          PDF Utility
-        </motion.h1>
-        <motion.p
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.2 }}
-          className="text-sm sm:text-base md:text-lg text-center text-gray-700 mb-6 anti-aliasing"
-        >
-          Choose between compressing or merging your PDF files for efficient
-          management.
-          <br />
-          <span className="text-gray-600 font-medium anti-aliasing">
-            <b>Compress</b> to reduce file sizes for easier storage and sharing,
-            or <b>merge</b> multiple PDFs into one for seamless organization.
-          </span>
-        </motion.p>
-
-        {/* Toggle Switch */}
-        <div className="relative w-64 h-12 mx-auto bg-gray-100 rounded-full flex items-center overflow-hidden shadow-md mb-8">
-          <motion.div
-            className="absolute top-1 left-1 h-10 w-[48%] bg-blue-600 rounded-full"
-            animate={{ x: currentMode === "compress" ? 0 : "100%" }}
-            transition={{ type: "spring", stiffness: 300, damping: 20 }}
-          />
-          <button
-            onClick={() => setCurrentMode("compress")}
-            className={`relative z-10 flex-1 text-center font-bold ${
-              currentMode === "compress" ? "text-white" : "text-gray-700"
-            }`}
+        <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
+          <motion.header
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3 }}
+            className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
           >
-            Compress
-          </button>
-          <button
-            onClick={() => setCurrentMode("merge")}
-            className={`relative z-10 flex-1 text-center font-bold ${
-              currentMode === "merge" ? "text-white" : "text-gray-700"
-            }`}
-          >
-            Merge
-          </button>
-        </div>
+            <h1 className="font-[var(--font-display)] text-3xl font-semibold tracking-tight sm:text-4xl">
+              Ship Smaller PDFs, Faster
+            </h1>
+            <p className="mt-2 max-w-3xl text-sm text-slate-600 sm:text-base">
+              A private, all-in-one PDF workspace to optimize, organize, and prepare documents for any workflow. Everything stays on your device for privacy and control.
+            </p>
 
-        {/* File Uploader */}
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={currentMode + "-uploader"}
-            initial={{ opacity: 0, y: 50, scale: 0.8 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -50, scale: 0.8 }}
-            transition={{ type: "spring", stiffness: 200, damping: 25 }}
-          >
-            <FileUploader
-              onFileUpload={handleFileUpload}
-              maxFiles={5}
-              files={files}
-              onRemoveFile={handleRemoveFile}
-            />
-          </motion.div>
-        </AnimatePresence>
+            <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <SummaryCard label="Files" value={String(files.length)} />
+              <SummaryCard label="Total Size" value={formatBytes(totalSize)} />
+              <SummaryCard label="Total Pages" value={String(totalPages)} />
+            </div>
+          </motion.header>
 
-        {/* Mode-specific Content */}
-        <AnimatePresence mode="wait">
-          {currentMode === "compress" && (
-            <>
-              {/* Container untuk opsi compress */}
-              <motion.div
-                key="compress-options"
-                initial={{ opacity: 0, x: -50 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 50 }}
-                transition={{ duration: 0.5 }}
-                className="bg-white rounded-2xl shadow-lg mt-6 p-8 sm:p-10"
-              >
-                <CompressionOptions
-                  compressionLevel={compressionLevel}
-                  setCompressionLevel={setCompressionLevel}
+          <motion.section
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.35, delay: 0.04 }}
+            className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1">
+                <ModeButton
+                  active={mode === "compress"}
+                  icon={<FileArchive size={14} />}
+                  label="Compress"
+                  onClick={() => setMode("compress")}
                 />
-              </motion.div>
+                <ModeButton
+                  active={mode === "merge"}
+                  icon={<Merge size={14} />}
+                  label="Merge"
+                  onClick={() => setMode("merge")}
+                />
+              </div>
 
-              {/* Container untuk tombol compress dan progress */}
-              <motion.div
-                key="compress-action"
-                initial={{ opacity: 0, x: -50 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 50 }}
-                transition={{ duration: 0.5 }}
-                className="mt-4 flex flex-col items-center space-y-4"
-              >
-                <motion.button
-                  onClick={handleCompress}
-                  disabled={files.length === 0 || isProcessing}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  className={actionButtonClasses}
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={removeDuplicates}
+                  className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
                 >
-                  {isProcessing ? "Compressing..." : "Compress PDFs"}
-                </motion.button>
-                {isProcessing && (
-                  <CompressionProgress files={files} progress={progress} />
-                )}
-                {compressedFiles.length > 0 && (
-                  <DownloadSection
-                    compressedFiles={compressedFiles}
-                    onReset={handleReset}
-                  />
-                )}
-              </motion.div>
-            </>
-          )}
+                  <WandSparkles size={14} />
+                  Deduplicate
+                </button>
+                <button
+                  type="button"
+                  onClick={resetSession}
+                  className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                >
+                  <RefreshCw size={14} />
+                  Reset
+                </button>
+              </div>
+            </div>
 
-          {currentMode === "merge" && (
-            <>
-              {/* Container tombol tanpa card styling */}
-              <motion.div
-                key="merge-button"
-                initial={{ opacity: 0, x: 50 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -50 }}
-                transition={{ duration: 0.5 }}
-                className="mt-6 flex justify-center"
-              >
-                <motion.button
-                  onClick={handleMerge}
-                  disabled={files.length === 0 || isProcessing}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  className={actionButtonClasses}
+            <div
+              {...getRootProps()}
+              className={`mt-4 rounded-xl border border-dashed p-5 transition ${
+                isDragActive ? "border-slate-500 bg-slate-100" : "border-slate-300 bg-slate-50"
+              }`}
+            >
+              <input {...getInputProps()} />
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="rounded-lg bg-slate-900 p-2 text-white">
+                    <UploadCloud size={16} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">Drag and drop PDF files</p>
+                    <p className="text-xs text-slate-600">Maximum {MAX_FILES} files per session</p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={open}
+                  className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
                 >
-                  {isProcessing ? (
-                    <div className="flex items-center justify-center space-x-2">
-                      <span className="animate-spin rounded-full h-5 w-5 border-t-2 border-white border-opacity-75"></span>
-                      <span>Merging...</span>
-                    </div>
+                  Browse Files
+                </button>
+              </div>
+
+              <p className="mt-3 text-sm text-slate-600">{notice}</p>
+            </div>
+          </motion.section>
+
+          <div className="mt-6 grid gap-6 lg:grid-cols-[1.15fr_1fr]">
+            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-slate-500">Queue</h2>
+
+              <div className="mt-3 space-y-2">
+                <AnimatePresence mode="popLayout">
+                  {files.length ? (
+                    files.map((entry, index) => (
+                      <motion.div
+                        key={entry.id}
+                        layout
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -6 }}
+                        transition={{ duration: 0.18 }}
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-3"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <FileText size={14} className="text-slate-500" />
+                              <p className="truncate text-sm font-medium text-slate-800">{entry.file.name}</p>
+                            </div>
+                            <p className="mt-1 text-xs text-slate-500">
+                              {formatBytes(entry.file.size)}
+                              {entry.pageCount !== null ? ` | ${entry.pageCount} pages` : " | scanning pages..."}
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-1">
+                            <IconButton onClick={() => moveFile(index, -1)} disabled={index === 0}>
+                              <ArrowUp size={12} />
+                            </IconButton>
+                            <IconButton onClick={() => moveFile(index, 1)} disabled={index === files.length - 1}>
+                              <ArrowDown size={12} />
+                            </IconButton>
+                            <IconButton onClick={() => removeFile(entry.id)} danger>
+                              <Trash2 size={12} />
+                            </IconButton>
+                          </div>
+                        </div>
+
+                        {isWorking && mode === "compress" && progressMap[entry.id] !== undefined ? (
+                          <div className="mt-2">
+                            <div className="mb-1 flex justify-between text-[11px] text-slate-500">
+                              <span>Compression</span>
+                              <span>{progressMap[entry.id]}%</span>
+                            </div>
+                            <div className="h-1.5 rounded-full bg-slate-200">
+                              <motion.div
+                                className="h-1.5 rounded-full bg-slate-900"
+                                initial={{ width: 0 }}
+                                animate={{ width: `${progressMap[entry.id]}%` }}
+                              />
+                            </div>
+                          </div>
+                        ) : null}
+                      </motion.div>
+                    ))
                   ) : (
-                    "Merge PDFs"
-                  )}
-                </motion.button>
-              </motion.div>
-
-              {/* Container card untuk mergedFile */}
-              {mergedFile && (
-                <motion.div
-                  key="merge-card"
-                  initial={{ opacity: 0, x: 50 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -50 }}
-                  transition={{ duration: 0.5 }}
-                  className="mt-8 bg-white rounded-2xl shadow-lg p-8 sm:p-10"
-                >
-                  <div className="bg-gradient-to-r from-blue-100 to-green-100 p-8 rounded-xl shadow-md text-center">
-                    <h3 className="text-2xl font-bold text-gray-800 mb-6">
-                      🎉 Your merged PDF is ready!
-                    </h3>
-                    <div className="flex flex-col md:flex-row items-center justify-center gap-6">
-                      <a
-                        href={URL.createObjectURL(mergedFile)}
-                        download={mergeFileName}
-                        className="bg-green-600 text-white py-3 px-8 rounded-lg font-bold shadow-lg hover:bg-green-700 transition-all"
-                      >
-                        Download PDF
-                      </a>
-                      <button
-                        onClick={() =>
-                          window.open(URL.createObjectURL(mergedFile), "_blank")
-                        }
-                        className="bg-blue-600 text-white py-3 px-8 rounded-lg font-bold shadow-lg hover:bg-blue-700 transition-all"
-                      >
-                        Preview PDF
-                      </button>
-                      <motion.button
-                        onClick={handleReset}
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        className="bg-gray-800 text-white w-12 h-12 md:w-auto md:h-auto md:px-6 md:py-3 rounded-lg font-bold shadow-lg hover:bg-gray-900 transition-colors duration-200 flex items-center justify-center"
-                      >
-                        <FiPlus className="text-xl" />
-                        <span className="hidden md:inline ml-2">
-                          New Session
-                        </span>
-                      </motion.button>
-                    </div>
-                    <motion.img
-                      src="/assets/img/tuzki.gif"
-                      alt="Tuzki Celebration"
-                      className="mx-auto mt-8 w-32"
+                    <motion.p
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
-                      transition={{ duration: 0.5 }}
-                    />
-                  </div>
-                </motion.div>
-              )}
-            </>
-          )}
-        </AnimatePresence>
-      </motion.div>
-      <footer className="border-t border-gray-200 mt-12">
-        <div className="max-w-screen-xl mx-auto px-4 sm:px-6 md:px-8 py-8 flex flex-col items-center space-y-6">
-          <motion.p
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.5, delay: 0.8 }}
-            className="text-center text-sm text-gray-500 font-medium"
-          >
-            🔒Your files are processed locally and never leave your device,
-            ensuring maximum privacy and security.
-          </motion.p>
-          <p className="text-center text-sm text-gray-600 font-medium">
-            Built with ❤️ by{" "}
-            <span className="font-semibold text-blue-500">Aldo Tobing</span>
-          </p>
-          <div className="flex space-x-4">
-            <a
-              href="https://github.com/aldotobing"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="p-2 bg-gray-100 rounded-full hover:bg-gray-200 transition duration-300"
-            >
-              <img
-                src="/assets/img/github-mark.png"
-                alt="GitHub"
-                className="h-5 w-5"
-                loading="lazy"
-              />
-            </a>
-            <a
-              href="https://twitter.com/aldo_tobing"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="p-2 bg-gray-100 rounded-full hover:bg-gray-200 transition duration-300"
-            >
-              <img
-                src="/assets/img/x.png"
-                alt="Twitter"
-                className="h-4 w-4"
-                loading="lazy"
-              />
-            </a>
+                      className="rounded-xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-500"
+                    >
+                      No files queued yet.
+                    </motion.p>
+                  )}
+                </AnimatePresence>
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <AnimatePresence mode="wait">
+                {mode === "compress" ? (
+                  <motion.div
+                    key="compress-pane"
+                    initial={{ opacity: 0, x: 10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -10 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-slate-500">Compression</h2>
+                      <p className="text-xs text-slate-500">Suggested: {PRESET_META[recommendedLevel].label}</p>
+                    </div>
+
+                    <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                      {(Object.keys(PRESET_META) as CompressionLevel[]).map((level) => {
+                        const preset = PRESET_META[level];
+                        const active = compressionLevel === level;
+
+                        return (
+                          <button
+                            key={level}
+                            type="button"
+                            onClick={() => setCompressionLevel(level)}
+                            title={preset.tooltip}
+                            className={`group relative rounded-lg border px-3 py-3 text-left transition-all duration-200 ${
+                              active
+                                ? "border-slate-900 bg-slate-900 text-white shadow-sm"
+                                : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                            }`}
+                          >
+                            <div className="pointer-events-none absolute left-1/2 top-0 z-20 hidden w-56 -translate-x-1/2 -translate-y-[108%] rounded-md border border-slate-200 bg-white px-2.5 py-2 text-xs text-slate-600 shadow-md group-hover:block group-focus-visible:block">
+                              {preset.tooltip}
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <p className="text-sm font-semibold">{preset.label}</p>
+                              <span className={`text-lg font-bold ${active ? "text-white" : "text-slate-800"}`}>
+                                {preset.targetReduction}%
+                              </span>
+                            </div>
+                            <div className="mt-3 h-1.5 rounded-full bg-slate-200/70">
+                              <div
+                                className={`h-1.5 rounded-full ${active ? "bg-white" : preset.colorClass}`}
+                                style={{ width: `${preset.targetReduction}%` }}
+                              />
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => void handleCompress()}
+                      disabled={!files.length || isWorking}
+                      className="mt-4 w-full rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-50"
+                    >
+                      {isWorking ? "Compressing..." : "Run Compression"}
+                    </button>
+
+                    {compressionResults.length ? (
+                      <div className="mt-4 space-y-2">
+                        <div className="grid grid-cols-3 gap-2">
+                          <SummaryCard label="Original" value={formatBytes(compressionStats.original)} />
+                          <SummaryCard label="Compressed" value={formatBytes(compressionStats.compressed)} />
+                          <SummaryCard label="Saved" value={`${compressionStats.savedPct.toFixed(1)}%`} />
+                        </div>
+
+                        {compressionResults.map((result) => (
+                          <div
+                            key={result.id}
+                            className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium text-slate-800">{result.name}</p>
+                              <p className="text-xs text-slate-500">
+                                {formatBytes(result.originalSize)} | {formatBytes(result.compressedSize)}
+                              </p>
+                            </div>
+
+                            <a
+                              href={result.url}
+                              download={`compressed_${result.name}`}
+                              className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-100"
+                            >
+                              <Download size={12} />
+                              Download
+                            </a>
+                          </div>
+                        ))}
+
+                        <button
+                          type="button"
+                          onClick={() => void handleZipDownload()}
+                          className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+                        >
+                          Download ZIP
+                        </button>
+                      </div>
+                    ) : null}
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="merge-pane"
+                    initial={{ opacity: 0, x: 10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -10 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-slate-500">Merge</h2>
+                    <p className="mt-2 text-sm text-slate-600">Queue order determines output page order.</p>
+
+                    <button
+                      type="button"
+                      onClick={() => void handleMerge()}
+                      disabled={!files.length || isWorking}
+                      className="mt-4 w-full rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-50"
+                    >
+                      {isWorking ? "Merging..." : "Merge Files"}
+                    </button>
+
+                    {mergeResult ? (
+                      <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                        <p className="text-sm font-medium text-slate-800">{mergeResult.name}</p>
+                        <p className="mt-1 text-xs text-slate-500">{formatBytes(mergeResult.size)}</p>
+
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <a
+                            href={mergeResult.url}
+                            download={mergeResult.name}
+                            className="inline-flex items-center gap-2 rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
+                          >
+                            <Download size={13} />
+                            Download
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => window.open(mergeResult.url, "_blank", "noopener,noreferrer")}
+                            className="inline-flex items-center rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+                          >
+                            Preview
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </section>
           </div>
         </div>
-      </footer>
-    </main>
+
+        <footer className="border-t border-slate-200 bg-white">
+          <div className="mx-auto flex w-full max-w-6xl flex-col gap-2 px-4 py-5 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
+            <p className="inline-flex items-center gap-2">
+              <ShieldCheck size={14} className="text-emerald-600" />
+              Files are processed locally and never uploaded.
+            </p>
+            <p>PDF Zen Studio</p>
+          </div>
+        </footer>
+      </motion.main>
+    </>
+  );
+}
+
+function ModeButton({
+  active,
+  icon,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition ${
+        active ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"
+      }`}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+function IconButton({
+  children,
+  onClick,
+  disabled,
+  danger,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`rounded-md border p-1.5 transition disabled:opacity-30 ${
+        danger
+          ? "border-slate-200 text-rose-600 hover:bg-rose-50"
+          : "border-slate-200 text-slate-600 hover:bg-slate-50"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function SummaryCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+      <p className="text-[10px] uppercase tracking-[0.12em] text-slate-500">{label}</p>
+      <p className="mt-1 text-sm font-semibold text-slate-900">{value}</p>
+    </div>
   );
 }

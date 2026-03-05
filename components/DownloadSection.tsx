@@ -39,7 +39,7 @@ export default function DownloadSection({
       transition: {
         delay: i * 0.1,
         duration: 0.4,
-        ease: "easeOut",
+        ease: "easeOut" as const,
       },
     }),
   };
@@ -227,3 +227,4 @@ function calculateReduction(
   const reduction = ((originalSize - compressedSize) / originalSize) * 100;
   return reduction.toFixed(1) + "%";
 }
+

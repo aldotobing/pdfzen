@@ -10,7 +10,6 @@ export async function compressPDF(
   const pdfDoc = await PDFDocument.load(arrayBuffer);
   const totalPages = pdfDoc.getPageCount();
 
-  // Enhanced compression settings
   const compressionSettings = {
     low: {
       useObjectStreams: true,
@@ -29,19 +28,15 @@ export async function compressPDF(
       objectsPerTick: 20,
       updateMetadata: false,
       preserveObjects: false,
-      // Additional aggressive settings
       removeUnusedObjects: true,
       compressStreams: true,
     },
   };
 
-  // Process each page
   for (let i = 0; i < totalPages; i++) {
-    const page = pdfDoc.getPages()[i];
     onProgress(Math.round(((i + 1) / totalPages) * 100));
   }
 
-  // Apply compression
   const settings = compressionSettings[compressionLevel];
   const pdfBytes = await pdfDoc.save({
     ...settings,
@@ -49,5 +44,6 @@ export async function compressPDF(
     updateFieldAppearances: false,
   });
 
-  return new Blob([pdfBytes], { type: "application/pdf" });
+  const outputBytes = Uint8Array.from(pdfBytes);
+  return new Blob([outputBytes], { type: "application/pdf" });
 }

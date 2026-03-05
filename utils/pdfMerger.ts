@@ -18,5 +18,6 @@ export async function mergePDFs(files: File[]): Promise<Blob> {
   }
 
   const mergedPdfBytes = await mergedPdf.save();
-  return new Blob([mergedPdfBytes], { type: "application/pdf" });
+  const outputBytes = Uint8Array.from(mergedPdfBytes);
+  return new Blob([outputBytes], { type: "application/pdf" });
 }
