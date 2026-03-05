@@ -9,6 +9,7 @@ import {
   Download,
   FileArchive,
   FileText,
+  LayoutGrid,
   Merge,
   RefreshCw,
   ShieldCheck,
@@ -25,8 +26,9 @@ import { compressPDF } from "@/utils/pdfCompressor";
 import { mergePDFs } from "@/utils/pdfMerger";
 import SplashScreen from "@/components/splash/SplashScreen";
 import { useOneTimeSplash } from "@/hooks/use-one-time-splash";
+import PageEditor from "@/components/PageEditor";
 
-type Mode = "compress" | "merge";
+type Mode = "compress" | "merge" | "edit";
 
 type WorkFile = {
   id: string;
@@ -106,6 +108,7 @@ export default function HomePage() {
   const [compressionResults, setCompressionResults] = useState<CompressionResult[]>([]);
   const [mergeResult, setMergeResult] = useState<MergeResult | null>(null);
   const [notice, setNotice] = useState("Upload PDF files to get started.");
+  const [editingFile, setEditingFile] = useState<File | null>(null);
   const { showSplash, appReady } = useOneTimeSplash({ durationMs: 1800 });
 
   const clearCompressionResults = useCallback(() => {
@@ -379,6 +382,12 @@ export default function HomePage() {
                   label="Merge"
                   onClick={() => setMode("merge")}
                 />
+                <ModeButton
+                  active={mode === "edit"}
+                  icon={<LayoutGrid size={14} />}
+                  label="Edit Pages"
+                  onClick={() => setMode("edit")}
+                />
               </div>
 
               <div className="flex flex-wrap gap-2">
@@ -505,8 +514,7 @@ export default function HomePage() {
             </section>
 
             <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <AnimatePresence mode="wait">
-                {mode === "compress" ? (
+              {mode === "compress" && (
                   <motion.div
                     key="compress-pane"
                     initial={{ opacity: 0, x: 10 }}
@@ -605,17 +613,13 @@ export default function HomePage() {
                         </button>
                       </div>
                     ) : null}
-                  </motion.div>
-                ) : (
-                  <motion.div
-                    key="merge-pane"
-                    initial={{ opacity: 0, x: 10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -10 }}
-                    transition={{ duration: 0.2 }}
-                  >
-                    <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-slate-500">Merge</h2>
-                    <p className="mt-2 text-sm text-slate-600">Queue order determines output page order.</p>
+                </motion.div>
+              )}
+
+              {mode === "merge" && (
+                <div>
+                  <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-slate-500">Merge</h2>
+                  <p className="mt-2 text-sm text-slate-600">Queue order determines output page order.</p>
 
                     <button
                       type="button"
@@ -650,12 +654,59 @@ export default function HomePage() {
                         </div>
                       </div>
                     ) : null}
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                </div>
+              )}
+
+              {mode === "edit" && (
+                <div>
+                  <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-slate-500">Page Editor</h2>
+                  <p className="mt-2 text-sm text-slate-600">
+                    Select a PDF file to edit. Open a full-page editor to rotate, delete, reorder, and split pages.
+                  </p>
+
+                    {files.length > 0 ? (
+                      <div className="mt-4 space-y-2">
+                        {files.map((entry) => (
+                          <div
+                            key={entry.id}
+                            className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <FileText size={14} className="text-slate-500" />
+                                <p className="truncate text-sm font-medium text-slate-800">{entry.file.name}</p>
+                              </div>
+                              <p className="mt-1 text-xs text-slate-500">
+                                {formatBytes(entry.file.size)}
+                                {entry.pageCount !== null ? ` | ${entry.pageCount} pages` : " | scanning pages..."}
+                              </p>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => setEditingFile(entry.file)}
+                              className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
+                            >
+                              <LayoutGrid size={14} />
+                              Edit Pages
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-4 text-sm text-slate-500">No files to edit. Upload PDF files first.</p>
+                    )}
+                </div>
+              )}
             </section>
           </div>
         </div>
+
+        <AnimatePresence>
+          {editingFile && (
+            <PageEditor file={editingFile} onClose={() => setEditingFile(null)} />
+          )}
+        </AnimatePresence>
 
         <footer className="border-t border-slate-200 bg-white">
           <div className="mx-auto flex w-full max-w-6xl flex-col gap-2 px-4 py-5 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">

@@ -6,3 +6,20 @@ export interface CompressedFile {
   downloadUrl: string
 }
 
+export interface PageData {
+  id: string
+  pageIndex: number
+  rotation: number
+  thumbnailUrl?: string
+  selected?: boolean
+}
+
+export interface PdfWithPages {
+  id: string
+  file: File
+  pages: PageData[]
+  name: string
+}
+
+export type PageSelectionMode = "single" | "range" | "multi"
+
