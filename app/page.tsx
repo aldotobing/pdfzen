@@ -9,11 +9,13 @@ import {
   Download,
   FileArchive,
   FileText,
+  Github,
   LayoutGrid,
   Merge,
   RefreshCw,
   ShieldCheck,
   Trash2,
+  Twitter,
   UploadCloud,
   WandSparkles,
 } from "lucide-react";
@@ -709,12 +711,42 @@ export default function HomePage() {
         </AnimatePresence>
 
         <footer className="border-t border-slate-200 bg-white">
-          <div className="mx-auto flex w-full max-w-6xl flex-col gap-2 px-4 py-5 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
-            <p className="inline-flex items-center gap-2">
-              <ShieldCheck size={14} className="text-emerald-600" />
-              Files are processed locally and never uploaded.
-            </p>
-            <p>PDF Zen Studio</p>
+          <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 py-6 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <p className="inline-flex items-center gap-2 text-sm text-slate-600">
+                <ShieldCheck size={14} className="text-emerald-600" />
+                Files are processed locally and never uploaded.
+              </p>
+            </div>
+            
+            <div className="flex items-center justify-between gap-4 sm:justify-end">
+              <p className="text-sm text-slate-500">
+                © 2025 by Aldo. All rights reserved.
+              </p>
+              
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-medium text-slate-600">PDF Zen Studio</span>
+                <div className="h-4 w-px bg-slate-300" />
+                <a
+                  href="https://github.com/aldotobing"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-slate-400 transition hover:text-slate-900"
+                  aria-label="GitHub"
+                >
+                  <Github size={18} />
+                </a>
+                <a
+                  href="https://twitter.com/aldo_tobing"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-slate-400 transition hover:text-slate-900"
+                  aria-label="Twitter"
+                >
+                  <Twitter size={18} />
+                </a>
+              </div>
+            </div>
           </div>
         </footer>
       </motion.main>
