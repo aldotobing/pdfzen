@@ -18,7 +18,7 @@ export async function splitPdfPages(
   copiedPages.forEach((page) => newPdf.addPage(page));
 
   const pdfBytes = await newPdf.save();
-  return new Blob([pdfBytes], { type: "application/pdf" });
+  return new Blob([pdfBytes.buffer as ArrayBuffer], { type: "application/pdf" });
 }
 
 /**
@@ -42,7 +42,7 @@ export async function splitPdfIntoIndividualPages(
     const pdfBytes = await newPdf.save();
     results.push({
       name: `${file.name.replace(/\.pdf$/i, "")}_page_${i + 1}.pdf`,
-      blob: new Blob([pdfBytes], { type: "application/pdf" }),
+      blob: new Blob([pdfBytes.buffer as ArrayBuffer], { type: "application/pdf" }),
       pageIndex: i,
     });
   }
@@ -73,7 +73,7 @@ export async function rotatePdfPages(
   });
 
   const pdfBytes = await pdfDoc.save();
-  return new Blob([pdfBytes], { type: "application/pdf" });
+  return new Blob([pdfBytes.buffer as ArrayBuffer], { type: "application/pdf" });
 }
 
 /**
@@ -111,7 +111,7 @@ export async function deletePdfPages(
   copiedPages.forEach((page) => newPdf.addPage(page));
 
   const pdfBytes = await newPdf.save();
-  return new Blob([pdfBytes], { type: "application/pdf" });
+  return new Blob([pdfBytes.buffer as ArrayBuffer], { type: "application/pdf" });
 }
 
 /**
@@ -155,7 +155,7 @@ export async function reorderPdfPages(
   copiedPages.forEach((page) => newPdf.addPage(page));
 
   const pdfBytes = await newPdf.save();
-  return new Blob([pdfBytes], { type: "application/pdf" });
+  return new Blob([pdfBytes.buffer as ArrayBuffer], { type: "application/pdf" });
 }
 
 /**
