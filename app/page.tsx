@@ -1,8 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
-import FileUploader from "../components/FileUploader";
+
+const FileUploader = dynamic(() => import("../components/FileUploader"), {
+  ssr: false,
+});
+
 import CompressionOptions from "../components/CompressionOptions";
 import CompressionProgress from "../components/CompressionProgress";
 import { compressPDF } from "../utils/pdfCompressor";
@@ -11,8 +16,8 @@ import type { CompressedFile, CompressionLevel } from "../types";
 import DownloadSection from "../components/DownloadSection";
 import { FiPlus } from "react-icons/fi";
 
-import "react-pdf/dist/esm/Page/AnnotationLayer.css";
-import "react-pdf/dist/esm/Page/TextLayer.css";
+import "react-pdf/dist/Page/AnnotationLayer.css";
+import "react-pdf/dist/Page/TextLayer.css";
 
 export default function Home() {
   const [files, setFiles] = useState<File[]>([]);
