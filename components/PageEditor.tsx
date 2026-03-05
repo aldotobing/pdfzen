@@ -44,6 +44,9 @@ export default function PageEditor({ file, onClose }: PageEditorProps) {
   const [history, setHistory] = useState<PageData[][]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
+  const [hoveredPage, setHoveredPage] = useState<number | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
+  const hoverTimerRef = useRef<NodeJS.Timeout | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Initialize pages from PDF
@@ -235,6 +238,27 @@ export default function PageEditor({ file, onClose }: PageEditorProps) {
     setStatusMessage("Pages reordered");
   }, [saveToHistory]);
 
+  // Hover preview handlers
+  const handleMouseEnter = useCallback((pageIndex: number) => {
+    // Clear any existing timer
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+    }
+    setHoveredPage(pageIndex);
+    // Show preview after 800ms delay
+    hoverTimerRef.current = setTimeout(() => {
+      setShowPreview(true);
+    }, 800);
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+    }
+    setHoveredPage(null);
+    setShowPreview(false);
+  }, []);
+
   const handleSplitSelected = useCallback(async () => {
     if (selectedPages.size === 0) return;
 
@@ -375,7 +399,12 @@ export default function PageEditor({ file, onClose }: PageEditorProps) {
     };
 
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      if (hoverTimerRef.current) {
+        clearTimeout(hoverTimerRef.current);
+      }
+    };
   }, [undo, redo, handleRotateSelected, handleDeleteSelected, handleSave, pages]);
 
   const selectedCount = selectedPages.size;
@@ -544,6 +573,8 @@ export default function PageEditor({ file, onClose }: PageEditorProps) {
                   isSelected={selectedPages.has(index)}
                   onSelect={handleSelectPage}
                   viewMode="grid"
+                  onMouseEnter={() => handleMouseEnter(index)}
+                  onMouseLeave={handleMouseLeave}
                 />
               ))}
             </Reorder.Group>
@@ -563,11 +594,48 @@ export default function PageEditor({ file, onClose }: PageEditorProps) {
                   isSelected={selectedPages.has(index)}
                   onSelect={handleSelectPage}
                   viewMode="list"
+                  onMouseEnter={() => handleMouseEnter(index)}
+                  onMouseLeave={handleMouseLeave}
                 />
               ))}
             </Reorder.Group>
           )}
         </div>
+
+        {/* Hover Preview Modal */}
+        <AnimatePresence>
+          {showPreview && hoveredPage !== null && pages[hoveredPage]?.thumbnailUrl && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="fixed inset-0 flex items-center justify-center z-[60] pointer-events-none"
+            >
+              {/* Backdrop */}
+              <div className="absolute inset-0 bg-black/80 backdrop-blur-xl" />
+              
+              {/* Preview Card - iOS style */}
+              <motion.div
+                initial={{ opacity: 0, scale: 0.92, y: 16 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.92, y: 16 }}
+                transition={{ duration: 0.2, ease: [0.32, 0.72, 0, 1] }}
+                className="relative"
+              >
+                <img
+                  src={pages[hoveredPage].thumbnailUrl}
+                  alt={`Page ${hoveredPage + 1} full preview`}
+                  className="max-h-[75vh] max-w-[90vw] object-contain rounded-lg shadow-2xl"
+                  style={{ 
+                    imageRendering: 'auto',
+                    transform: `rotate(${pages[hoveredPage].rotation}deg)`,
+                  }}
+                />
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Processing Overlay */}
         <AnimatePresence>
@@ -596,9 +664,11 @@ interface PageThumbnailProps {
   isSelected: boolean;
   onSelect: (index: number, event?: React.MouseEvent) => void;
   viewMode: "grid" | "list";
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
 }
 
-function PageThumbnail({ page, index, isSelected, onSelect, viewMode }: PageThumbnailProps) {
+function PageThumbnail({ page, index, isSelected, onSelect, viewMode, onMouseEnter, onMouseLeave }: PageThumbnailProps) {
   const isDragging = false;
 
   if (viewMode === "list") {
@@ -612,6 +682,8 @@ function PageThumbnail({ page, index, isSelected, onSelect, viewMode }: PageThum
             : "bg-slate-800 border-slate-700 hover:border-slate-600"
         }`}
         onMouseDown={(e: React.MouseEvent) => onSelect(index, e)}
+        onMouseEnter={onMouseEnter}
+        onMouseLeave={onMouseLeave}
       >
         <div className="w-12 h-16 bg-slate-700 rounded flex items-center justify-center flex-shrink-0">
           {page.thumbnailUrl ? (
@@ -649,6 +721,8 @@ function PageThumbnail({ page, index, isSelected, onSelect, viewMode }: PageThum
           : "border-slate-700 hover:border-slate-600"
       } bg-slate-800`}
       onMouseDown={(e: React.MouseEvent) => onSelect(index, e)}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
     >
       <div
         className="aspect-[3/4] relative"
