@@ -19,6 +19,7 @@ import {
   Twitter,
   UploadCloud,
   WandSparkles,
+  Repeat,
 } from "lucide-react";
 import JSZip from "jszip";
 import { saveAs } from "file-saver";
@@ -31,8 +32,9 @@ import SplashScreen from "@/components/splash/SplashScreen";
 import { useOneTimeSplash } from "@/hooks/use-one-time-splash";
 import PageEditor from "@/components/PageEditor";
 import SecurityTools from "@/components/SecurityTools";
+import ConvertTools from "@/components/ConvertTools";
 
-type Mode = "compress" | "merge" | "edit" | "security";
+type Mode = "compress" | "merge" | "edit" | "security" | "convert";
 
 type WorkFile = {
   id: string;
@@ -121,6 +123,7 @@ export default function HomePage() {
   const [notice, setNotice] = useState("Upload PDF files to get started.");
   const [editingFile, setEditingFile] = useState<File | null>(null);
   const [securityFile, setSecurityFile] = useState<File | null>(null);
+  const [convertFile, setConvertFile] = useState<File | null>(null);
   const { showSplash, appReady } = useOneTimeSplash({ durationMs: 1800 });
 
   const clearCompressionResults = useCallback(() => {
@@ -407,6 +410,12 @@ export default function HomePage() {
                     icon={<Lock size={14} />}
                     label="Security"
                     onClick={() => setMode("security")}
+                  />
+                  <ModeButton
+                    active={mode === "convert"}
+                    icon={<Repeat size={14} />}
+                    label="Convert"
+                    onClick={() => setMode("convert")}
                   />
                 </div>
               </div>
@@ -773,6 +782,51 @@ export default function HomePage() {
                   )}
                 </motion.div>
               )}
+
+              {mode === "convert" && (
+                <motion.div
+                  key="convert-pane"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-slate-500">Convert Files</h2>
+                  <p className="mt-2 text-sm text-slate-600">
+                    Convert between PDF, images, and Office formats. All processing happens locally.
+                  </p>
+
+                  {files.length > 0 ? (
+                    <div className="mt-4 space-y-2">
+                      {files.map((entry) => (
+                        <div
+                          key={entry.id}
+                          className="flex flex-col gap-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3"
+                        >
+                          <div className="flex items-center gap-2">
+                            <FileText size={14} className="text-slate-500 flex-shrink-0" />
+                            <p className="truncate text-sm font-medium text-slate-800">{entry.file.name}</p>
+                            <button
+                              type="button"
+                              onClick={() => setConvertFile(entry.file)}
+                              className="ml-auto inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 flex-shrink-0"
+                            >
+                              <Repeat size={14} />
+                              Convert
+                            </button>
+                          </div>
+                          <p className="text-xs text-slate-500">
+                            {formatBytes(entry.file.size)}
+                            {entry.pageCount !== null ? ` | ${entry.pageCount} pages` : " | scanning pages..."}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-4 text-sm text-slate-500">Upload PDF files to convert to images, or go to Images to PDF tab to upload images.</p>
+                  )}
+                </motion.div>
+              )}
             </section>
           </div>
         </div>
@@ -783,6 +837,9 @@ export default function HomePage() {
           )}
           {securityFile && (
             <SecurityTools file={securityFile} onClose={() => setSecurityFile(null)} />
+          )}
+          {convertFile && (
+            <ConvertTools file={convertFile} onClose={() => setConvertFile(null)} />
           )}
         </AnimatePresence>
 

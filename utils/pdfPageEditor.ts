@@ -345,7 +345,7 @@ export async function redactPdfPages(
   redactions.forEach((redaction) => {
     if (redaction.pageIndex >= 0 && redaction.pageIndex < pages.length) {
       const page = pages[redaction.pageIndex];
-
+      
       // Draw black rectangle over the area
       page.drawRectangle({
         x: redaction.x,
@@ -357,6 +357,130 @@ export async function redactPdfPages(
     }
   });
 
+  const pdfBytes = await pdfDoc.save();
+  return new Blob([pdfBytes.buffer as ArrayBuffer], { type: "application/pdf" });
+}
+
+/**
+ * Convert PDF pages to images.
+ * @param file - The source PDF file
+ * @param format - Image format ('png' or 'jpeg')
+ * @param quality - Image quality (0-1, only for jpeg)
+ * @param scale - Scale factor for resolution (1 = 72 DPI, 2 = 144 DPI, etc.)
+ * @returns Array of image data URLs with page numbers
+ */
+export async function convertPdfToImages(
+  file: File,
+  format: 'png' | 'jpeg' = 'png',
+  quality: number = 0.9,
+  scale: number = 2
+): Promise<Array<{ pageIndex: number; dataUrl: string; name: string }>> {
+  // Load PDF.js from CDN (same as PageEditor)
+  const pdfjsLib = await loadPDFJSFromCDN();
+  
+  const arrayBuffer = await file.arrayBuffer();
+  const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+  const pdfDoc = await loadingTask.promise;
+  const totalPages = pdfDoc.numPages;
+  
+  const results: Array<{ pageIndex: number; dataUrl: string; name: string }> = [];
+  
+  for (let i = 0; i < totalPages; i++) {
+    const page = await pdfDoc.getPage(i + 1);
+    const viewport = page.getViewport({ scale });
+    
+    const canvas = document.createElement("canvas");
+    canvas.height = viewport.height;
+    canvas.width = viewport.width;
+    
+    const context = canvas.getContext("2d");
+    if (context) {
+      const renderContext = {
+        canvasContext: context,
+        viewport: viewport,
+      };
+      await page.render(renderContext).promise;
+      
+      const dataUrl = canvas.toDataURL(`image/${format}`, quality);
+      const baseName = file.name.replace(/\.pdf$/i, "");
+      results.push({
+        pageIndex: i,
+        dataUrl,
+        name: `${baseName}_page_${i + 1}.${format === 'png' ? 'png' : 'jpg'}`,
+      });
+    }
+  }
+  
+  return results;
+}
+
+// Load PDF.js from CDN (UMD build)
+async function loadPDFJSFromCDN(): Promise<any> {
+  if (typeof window === 'undefined') {
+    throw new Error('PDF.js can only run in browser');
+  }
+  
+  if ((window as any).pdfjsLib) {
+    return (window as any).pdfjsLib;
+  }
+  
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+    script.crossOrigin = "anonymous";
+    script.onload = () => {
+      const pdfjsLib = (window as any).pdfjsLib;
+      if (pdfjsLib) {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 
+          "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+        resolve(pdfjsLib);
+      } else {
+        reject(new Error("PDF.js did not expose pdfjsLib"));
+      }
+    };
+    script.onerror = () => reject(new Error("Failed to load PDF.js from CDN"));
+    document.head.appendChild(script);
+  });
+}
+
+/**
+ * Convert images to PDF.
+ * @param images - Array of image files (PNG, JPG, etc.)
+ * @returns A Blob representing the PDF
+ */
+export async function convertImagesToPdf(
+  images: File[]
+): Promise<Blob> {
+  const pdfDoc = await PDFDocument.create();
+  
+  for (const image of images) {
+    const arrayBuffer = await image.arrayBuffer();
+    const imageBytes = new Uint8Array(arrayBuffer);
+    
+    let embeddedImage;
+    const mimeType = image.type.toLowerCase();
+    
+    if (mimeType.includes('png')) {
+      embeddedImage = await pdfDoc.embedPng(imageBytes);
+    } else if (mimeType.includes('jpeg') || mimeType.includes('jpg')) {
+      embeddedImage = await pdfDoc.embedJpg(imageBytes);
+    } else {
+      throw new Error(`Unsupported image format: ${image.type}`);
+    }
+    
+    const imgWidth = embeddedImage.width;
+    const imgHeight = embeddedImage.height;
+    
+    // Create page with same aspect ratio as image
+    const page = pdfDoc.addPage([imgWidth, imgHeight]);
+    page.drawImage(embeddedImage, {
+      x: 0,
+      y: 0,
+      width: imgWidth,
+      height: imgHeight,
+    });
+  }
+  
   const pdfBytes = await pdfDoc.save();
   return new Blob([pdfBytes.buffer as ArrayBuffer], { type: "application/pdf" });
 }
