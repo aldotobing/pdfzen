@@ -106,12 +106,23 @@ export function PWAInstallPrompt() {
 
   return (
     <div className="fixed bottom-4 left-4 right-4 z-50 md:left-auto md:right-4 md:w-96">
-      <Alert className="relative bg-background border shadow-lg pr-12">
-        <div className="flex items-start gap-3">
+      <Alert className="relative bg-background border shadow-lg pr-12 overflow-hidden">
+        {/* Shadow Watermark Background */}
+        <div
+          className="absolute top-0 right-0 w-2/3 h-full opacity-10 pointer-events-none"
+          style={{
+            backgroundImage: "url('/assets/img/shadow-bg.png')",
+            backgroundPosition: "right center",
+            backgroundRepeat: "no-repeat",
+            backgroundSize: "contain",
+          }}
+        />
+
+        <div className="relative z-10 flex items-start gap-3">
           <Download className="h-5 w-5 text-primary mt-0.5" />
           <div className="flex-1">
             <AlertDescription className="text-sm">
-              <p className="font-medium mb-1">Install PDF Zen Studio</p>
+              <p className="font-medium mb-1 text-foreground">Install PDF Zen Studio</p>
               <p className="text-muted-foreground">
                 Get quick access to your PDF workspace. Install the app for a
                 better experience.
@@ -130,7 +141,7 @@ export function PWAInstallPrompt() {
         <Button
           variant="ghost"
           size="icon"
-          className="absolute top-2 right-2 h-6 w-6"
+          className="absolute top-2 right-2 h-6 w-6 z-20"
           onClick={handleDismiss}
           aria-label="Dismiss install prompt"
         >
