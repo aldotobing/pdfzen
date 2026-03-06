@@ -544,7 +544,7 @@ export async function convertImagesToPdf(
  */
 export async function convertPdfToGrayscale(
   file: File,
-  scale: number = 1.5
+  scale: number = 1.0
 ): Promise<Blob> {
   // Load PDF.js from CDN
   const pdfjsLib = await loadPDFJSFromCDN();
@@ -588,14 +588,14 @@ export async function convertPdfToGrayscale(
       
       context.putImageData(imageData, 0, 0);
       
-      // Convert canvas to PNG and embed in new PDF
-      const pngDataUrl = canvas.toDataURL("image/png");
-      const pngBytes = await fetch(pngDataUrl).then(res => res.arrayBuffer());
-      const pngImage = await newPdf.embedPng(new Uint8Array(pngBytes));
+      // Convert to JPEG (compressed) instead of PNG to reduce file size
+      const jpegDataUrl = canvas.toDataURL("image/jpeg", 0.75);
+      const jpegBytes = await fetch(jpegDataUrl).then(res => res.arrayBuffer());
+      const jpegImage = await newPdf.embedJpg(new Uint8Array(jpegBytes));
       
       // Add page with same dimensions
       const newPage = newPdf.addPage([viewport.width, viewport.height]);
-      newPage.drawImage(pngImage, {
+      newPage.drawImage(jpegImage, {
         x: 0,
         y: 0,
         width: viewport.width,

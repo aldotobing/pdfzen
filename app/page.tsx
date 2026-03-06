@@ -26,7 +26,7 @@ import { saveAs } from "file-saver";
 import { PDFDocument } from "pdf-lib";
 
 import type { CompressionLevel } from "@/types";
-import { compressPDF } from "@/utils/pdfCompressor";
+import { compressPDF, compressPDFToTargetSize } from "@/utils/pdfCompressor";
 import { mergePDFs } from "@/utils/pdfMerger";
 import { convertPdfToGrayscale, flattenPdf } from "@/utils/pdfPageEditor";
 import SplashScreen from "@/components/splash/SplashScreen";
@@ -128,6 +128,8 @@ export default function HomePage() {
   const [showOptimizations, setShowOptimizations] = useState(false);
   const [optimizeGrayscale, setOptimizeGrayscale] = useState(false);
   const [optimizeFlatten, setOptimizeFlatten] = useState(false);
+  const [useTargetSize, setUseTargetSize] = useState(false);
+  const [targetSizeMB, setTargetSizeMB] = useState("");
   const { showSplash, appReady } = useOneTimeSplash({ durationMs: 1800 });
 
   const clearCompressionResults = useCallback(() => {
@@ -270,6 +272,26 @@ export default function HomePage() {
       return;
     }
 
+    // Validate target size if enabled
+    if (useTargetSize && targetSizeMB) {
+      const totalSizeMB = files.reduce((sum, f) => sum + f.file.size, 0) / (1024 * 1024);
+      const targetMB = parseFloat(targetSizeMB);
+      
+      if (targetMB <= 0) {
+        setNotice("Please enter a valid target size");
+        return;
+      }
+      
+      if (targetMB > totalSizeMB) {
+        setNotice(`Target size (${targetMB}MB) is larger than current size (${totalSizeMB.toFixed(1)}MB). Using normal compression instead.`);
+        setUseTargetSize(false);
+      }
+      
+      if (targetMB < totalSizeMB * 0.05) {
+        setNotice(`⚠️ Target size is very aggressive. Quality may be significantly reduced.`);
+      }
+    }
+
     setIsWorking(true);
     clearCompressionResults();
     clearMergeResult();
@@ -279,14 +301,30 @@ export default function HomePage() {
       const results: CompressionResult[] = [];
 
       for (const entry of files) {
-        let processedBlob = await compressPDF(entry.file, compressionLevel, (progress) => {
-          setProgressMap((prev) => ({ ...prev, [entry.id]: progress }));
-        });
+        let processedBlob: Blob;
+        
+        // Use smart compression if target size is set
+        if (useTargetSize && targetSizeMB) {
+          const targetBytes = parseFloat(targetSizeMB) * 1024 * 1024;
+          processedBlob = await compressPDFToTargetSize(
+            entry.file,
+            targetBytes,
+            compressionLevel, // Pass selected compression level as starting point
+            (progress) => setProgressMap((prev) => ({ ...prev, [entry.id]: progress }))
+          );
+        } else {
+          processedBlob = await compressPDF(entry.file, compressionLevel, (progress) => {
+            setProgressMap((prev) => ({ ...prev, [entry.id]: progress }));
+          });
+        }
 
-        // Apply grayscale optimization if enabled
+        // Apply grayscale optimization if enabled (after compression)
         if (optimizeGrayscale) {
+          // Use same scale as compression level for consistency
+          const scale = compressionLevel === 'low' ? 1.0 : compressionLevel === 'medium' ? 0.85 : 0.7;
           const grayscaleBlob = await convertPdfToGrayscale(
-            new File([processedBlob], entry.file.name, { type: "application/pdf" })
+            new File([processedBlob], entry.file.name, { type: "application/pdf" }),
+            scale
           );
           processedBlob = grayscaleBlob;
         }
@@ -311,6 +349,7 @@ export default function HomePage() {
 
       setCompressionResults(results);
       const optNotes = [];
+      if (useTargetSize && targetSizeMB) optNotes.push(`target: ${targetSizeMB}MB`);
       if (optimizeGrayscale) optNotes.push("grayscale");
       if (optimizeFlatten) optNotes.push("flattened");
       const note = optNotes.length > 0 ? ` (${optNotes.join(", ")})` : "";
@@ -321,7 +360,7 @@ export default function HomePage() {
     } finally {
       setIsWorking(false);
     }
-  }, [clearCompressionResults, clearMergeResult, compressionLevel, files, optimizeGrayscale, optimizeFlatten]);
+  }, [clearCompressionResults, clearMergeResult, compressionLevel, files, optimizeGrayscale, optimizeFlatten, useTargetSize, targetSizeMB]);
 
   const handleZipDownload = useCallback(async () => {
     if (!compressionResults.length) return;
@@ -577,12 +616,15 @@ export default function HomePage() {
                           <button
                             key={level}
                             type="button"
-                            onClick={() => setCompressionLevel(level)}
-                            title={preset.tooltip}
+                            onClick={() => !useTargetSize && setCompressionLevel(level)}
+                            disabled={useTargetSize}
+                            title={useTargetSize ? "Disabled when using target size" : preset.tooltip}
                             className={`group relative rounded-xl p-3 text-left transition-all duration-200 border-2 ${
-                              active
-                                ? `${preset.colorClass.replace('bg-', 'bg-').replace('500', '50')} ${preset.borderClass} text-slate-900 shadow-sm`
-                                : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                              useTargetSize
+                                ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
+                                : active
+                                  ? `${preset.colorClass.replace('bg-', 'bg-').replace('500', '50')} ${preset.borderClass} text-slate-900 shadow-sm`
+                                  : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
                             }`}
                           >
                             {/* Recommended Badge */}
@@ -649,6 +691,39 @@ export default function HomePage() {
                             className="overflow-hidden"
                           >
                             <div className="px-4 py-3 space-y-3 bg-white">
+                              {/* Target File Size */}
+                              <div className="border-b border-slate-200 pb-3">
+                                <label className="flex items-center gap-3 cursor-pointer mb-3">
+                                  <input
+                                    type="checkbox"
+                                    checked={useTargetSize}
+                                    onChange={(e) => setUseTargetSize(e.target.checked)}
+                                    className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                                  />
+                                  <div className="flex-1">
+                                    <p className="text-sm font-medium text-slate-700">Target File Size</p>
+                                    <p className="text-xs text-slate-500">
+                                      Smart compression to meet size goal (compression level buttons disabled)
+                                    </p>
+                                  </div>
+                                </label>
+                                
+                                {useTargetSize && (
+                                  <div className="flex items-center gap-2 ml-7">
+                                    <input
+                                      type="number"
+                                      value={targetSizeMB}
+                                      onChange={(e) => setTargetSizeMB(e.target.value)}
+                                      placeholder="e.g., 5"
+                                      step="0.1"
+                                      min="0.1"
+                                      className="w-24 px-3 py-1.5 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                    />
+                                    <span className="text-sm text-slate-600">MB</span>
+                                  </div>
+                                )}
+                              </div>
+
                               <label className="flex items-start gap-3 cursor-pointer">
                                 <input
                                   type="checkbox"
