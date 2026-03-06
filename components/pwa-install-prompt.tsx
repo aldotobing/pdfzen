@@ -21,10 +21,10 @@ export function PWAInstallPrompt() {
     const dismissed = localStorage.getItem('pwa-install-dismissed')
     const dismissedTime = localStorage.getItem('pwa-install-dismissed-time')
     
-    // Check if 30 days have passed since dismissal
+    // Check if 1 day has passed since dismissal
     if (dismissed && dismissedTime) {
       const daysPassed = (Date.now() - parseInt(dismissedTime)) / (1000 * 60 * 60 * 24)
-      if (daysPassed > 30) {
+      if (daysPassed > 1) {
         localStorage.removeItem('pwa-install-dismissed')
         localStorage.removeItem('pwa-install-dismissed-time')
       } else {
@@ -93,13 +93,13 @@ export function PWAInstallPrompt() {
   const handleDismiss = () => {
     setShowPrompt(false)
     setIsDismissed(true)
-    // Don't show again for 30 days
+    // Don't show again for 1 day
     localStorage.setItem('pwa-install-dismissed', 'true')
     localStorage.setItem(
       'pwa-install-dismissed-time',
       Date.now().toString()
     )
-    console.log('👋 Install prompt dismissed for 30 days')
+    console.log('👋 Install prompt dismissed for 1 day')
   }
 
   if (!showPrompt || isDismissed) return null
