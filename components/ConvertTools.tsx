@@ -12,7 +12,6 @@ import {
   Shield,
   AlertTriangle,
   Check,
-  Zip,
   File,
   Repeat,
 } from "lucide-react";
