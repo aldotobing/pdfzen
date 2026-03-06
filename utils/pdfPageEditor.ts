@@ -609,6 +609,94 @@ export async function convertPdfToGrayscale(
 }
 
 /**
+ * Perform OCR on a scanned PDF to make it searchable.
+ * @param file - The scanned PDF file
+ * @param language - OCR language (default: English)
+ * @returns A Blob representing the searchable PDF
+ */
+export async function performOCRonPdf(
+  file: File,
+  language: 'eng' | 'spa' | 'fra' | 'deu' | 'chi_sim' | 'jpn' = 'eng'
+): Promise<Blob> {
+  const Tesseract = await import("tesseract.js");
+  
+  const arrayBuffer = await file.arrayBuffer();
+  const pdfDoc = await PDFDocument.load(arrayBuffer);
+  const pages = pdfDoc.getPages();
+  
+  // Process each page
+  for (let i = 0; i < pages.length; i++) {
+    const page = pages[i];
+    const { width, height } = page.getSize();
+    
+    // Render page to image using PDF.js
+    const pdfjsLib = await loadPDFJSFromCDN();
+    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+    const pdfJsDoc = await loadingTask.promise;
+    const pdfPage = await pdfJsDoc.getPage(i + 1);
+    
+    const viewport = pdfPage.getViewport({ scale: 2 });
+    const canvas = document.createElement("canvas");
+    canvas.height = viewport.height;
+    canvas.width = viewport.width;
+    
+    const context = canvas.getContext("2d");
+    if (context) {
+      await pdfPage.render({
+        canvasContext: context,
+        viewport: viewport,
+      }).promise;
+      
+      // Perform OCR on the rendered image
+      const { data: { text } } = await Tesseract.recognize(
+        canvas,
+        language,
+        {
+          logger: (m) => {
+            console.log(`OCR Page ${i + 1}/${pages.length}:`, m);
+          }
+        }
+      );
+      
+      // Add invisible text layer over the page
+      // This makes the PDF searchable while preserving the original appearance
+      const fontSize = 10;
+      let currentY = height - 20;
+      let currentX = 20;
+      const maxWidth = width - 40;
+      
+      // Split text into lines and add as invisible text
+      const lines = text.split('\n');
+      for (const line of lines.slice(0, 50)) { // Limit to prevent overflow
+        if (line.trim().length > 0) {
+          try {
+            page.drawText(line.trim(), {
+              x: currentX,
+              y: currentY,
+              size: fontSize,
+              color: rgb(1, 1, 1), // White text (invisible on most backgrounds)
+              opacity: 0, // Fully transparent but still searchable
+            });
+            currentY -= fontSize + 2;
+            
+            if (currentY < 20) {
+              currentY = height - 20;
+              currentX += 150; // Move to next column
+              if (currentX > maxWidth) break;
+            }
+          } catch (e) {
+            // Skip lines that can't be added
+          }
+        }
+      }
+    }
+  }
+
+  const pdfBytes = await pdfDoc.save();
+  return new Blob([pdfBytes.buffer as ArrayBuffer], { type: "application/pdf" });
+}
+
+/**
  * Flatten PDF form fields and annotations into static content.
  * @param file - The source PDF file
  * @returns A Blob representing the flattened PDF

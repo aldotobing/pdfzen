@@ -19,15 +19,17 @@ import { useDropzone } from "react-dropzone";
 import {
   protectPdfWithPassword,
   addWatermarkToPdf,
+  performOCRonPdf,
   type WatermarkOptions,
 } from "@/utils/pdfPageEditor";
+import OCRTool from "./OCRTool";
 
 interface SecurityToolsProps {
   file: File;
   onClose: () => void;
 }
 
-type SecurityTab = "password" | "watermark" | "redact";
+type SecurityTab = "password" | "watermark" | "redact" | "ocr";
 
 export default function SecurityTools({ file, onClose }: SecurityToolsProps) {
   const [activeTab, setActiveTab] = useState<SecurityTab>("password");
@@ -68,7 +70,7 @@ export default function SecurityTools({ file, onClose }: SecurityToolsProps) {
             active={activeTab === "password"}
             onClick={() => setActiveTab("password")}
             icon={<Lock size={16} />}
-            label="Password Protection"
+            label="Password"
           />
           <TabButton
             active={activeTab === "watermark"}
@@ -80,7 +82,13 @@ export default function SecurityTools({ file, onClose }: SecurityToolsProps) {
             active={activeTab === "redact"}
             onClick={() => setActiveTab("redact")}
             icon={<EyeOff size={16} />}
-            label="Redact Content"
+            label="Redact"
+          />
+          <TabButton
+            active={activeTab === "ocr"}
+            onClick={() => setActiveTab("ocr")}
+            icon={<Shield size={16} />}
+            label="OCR"
           />
         </div>
 
@@ -107,6 +115,14 @@ export default function SecurityTools({ file, onClose }: SecurityToolsProps) {
               {activeTab === "redact" && (
                 <RedactTool
                   key="redact"
+                  file={file}
+                  onStatus={setStatusMessage}
+                  onProcessing={setIsProcessing}
+                />
+              )}
+              {activeTab === "ocr" && (
+                <OCRTool
+                  key="ocr"
                   file={file}
                   onStatus={setStatusMessage}
                   onProcessing={setIsProcessing}
