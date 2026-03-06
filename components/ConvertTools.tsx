@@ -594,40 +594,68 @@ function OfficeToPdf({
   return (
     <div className="space-y-6">
       <div className="bg-slate-800/50 rounded-xl p-6 border border-slate-700">
-        <div className="text-center py-12">
-          <File size={48} className="mx-auto text-slate-500 mb-4" />
-          <h3 className="text-lg font-medium text-white mb-2">Office to PDF</h3>
-          <p className="text-slate-400 mb-6 max-w-md mx-auto">
-            Convert Word, Excel, and PowerPoint files to PDF format.
-          </p>
-          <div className="inline-flex items-center gap-2 px-4 py-2 bg-amber-500/10 border border-amber-500/20 rounded-full text-amber-400 text-sm">
-            <AlertTriangle size={16} />
-            Coming Soon
+        {/* Info Banner */}
+        <div className="flex items-start gap-3 p-4 mb-6 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+          <AlertTriangle className="text-amber-500 flex-shrink-0 mt-0.5" size={20} />
+          <div className="text-sm text-amber-200">
+            <p className="font-medium mb-1">Why is this coming soon?</p>
+            <p className="text-amber-300/80 leading-relaxed">
+              Microsoft Office formats (.docx, .xlsx, .pptx) are proprietary and complex. 
+              True client-side conversion would require 100MB+ libraries with poor formatting support. 
+              We're working on a privacy-focused solution that maintains PDFZen's "files never leave your device" promise.
+            </p>
           </div>
         </div>
 
-        <div className="mt-6 grid grid-cols-3 gap-4">
-          <div className="bg-slate-700/50 rounded-lg p-4 text-center">
-            <div className="w-12 h-12 mx-auto mb-2 bg-blue-500/20 rounded-lg flex items-center justify-center">
-              <span className="text-2xl">📝</span>
+        {/* Supported Formats Grid */}
+        <div className="mb-6">
+          <h3 className="text-sm font-semibold text-slate-300 mb-4 text-center">Planned Format Support</h3>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="bg-slate-700/50 rounded-xl p-4 text-center border border-slate-600">
+              <div className="w-14 h-14 mx-auto mb-3 bg-blue-500/20 rounded-xl flex items-center justify-center">
+                <span className="text-3xl">📝</span>
+              </div>
+              <p className="text-sm font-semibold text-slate-200">Word</p>
+              <p className="text-xs text-slate-500 mt-1">.doc, .docx</p>
+              <div className="mt-2 inline-flex items-center gap-1 px-2 py-1 bg-amber-500/10 rounded-full">
+                <span className="text-[10px] text-amber-400 font-medium">Coming Soon</span>
+              </div>
             </div>
-            <p className="text-sm font-medium text-slate-300">Word</p>
-            <p className="text-xs text-slate-500">.doc, .docx</p>
-          </div>
-          <div className="bg-slate-700/50 rounded-lg p-4 text-center">
-            <div className="w-12 h-12 mx-auto mb-2 bg-green-500/20 rounded-lg flex items-center justify-center">
-              <span className="text-2xl">📊</span>
+            <div className="bg-slate-700/50 rounded-xl p-4 text-center border border-slate-600">
+              <div className="w-14 h-14 mx-auto mb-3 bg-green-500/20 rounded-xl flex items-center justify-center">
+                <span className="text-3xl">📊</span>
+              </div>
+              <p className="text-sm font-semibold text-slate-200">Excel</p>
+              <p className="text-xs text-slate-500 mt-1">.xls, .xlsx</p>
+              <div className="mt-2 inline-flex items-center gap-1 px-2 py-1 bg-amber-500/10 rounded-full">
+                <span className="text-[10px] text-amber-400 font-medium">Coming Soon</span>
+              </div>
             </div>
-            <p className="text-sm font-medium text-slate-300">Excel</p>
-            <p className="text-xs text-slate-500">.xls, .xlsx</p>
-          </div>
-          <div className="bg-slate-700/50 rounded-lg p-4 text-center">
-            <div className="w-12 h-12 mx-auto mb-2 bg-orange-500/20 rounded-lg flex items-center justify-center">
-              <span className="text-2xl">📽️</span>
+            <div className="bg-slate-700/50 rounded-xl p-4 text-center border border-slate-600">
+              <div className="w-14 h-14 mx-auto mb-3 bg-orange-500/20 rounded-xl flex items-center justify-center">
+                <span className="text-3xl">📽️</span>
+              </div>
+              <p className="text-sm font-semibold text-slate-200">PowerPoint</p>
+              <p className="text-xs text-slate-500 mt-1">.ppt, .pptx</p>
+              <div className="mt-2 inline-flex items-center gap-1 px-2 py-1 bg-amber-500/10 rounded-full">
+                <span className="text-[10px] text-amber-400 font-medium">Coming Soon</span>
+              </div>
             </div>
-            <p className="text-sm font-medium text-slate-300">PowerPoint</p>
-            <p className="text-xs text-slate-500">.ppt, .pptx</p>
           </div>
+        </div>
+
+        {/* Alternative Suggestion */}
+        <div className="bg-slate-700/30 rounded-xl p-5 border border-slate-600">
+          <h4 className="text-sm font-semibold text-slate-300 mb-2 flex items-center gap-2">
+            <Check size={16} className="text-emerald-400" />
+            Workaround for Now
+          </h4>
+          <p className="text-sm text-slate-400 leading-relaxed">
+            Open your Office document in Google Docs/Sheets/Slides or Microsoft Office Online, 
+            then use <span className="text-slate-200 font-medium">File → Download → PDF</span> or 
+            <span className="text-slate-200 font-medium"> Print → Save as PDF</span>. 
+            You can then use PDFZen to compress, merge, or edit the resulting PDF.
+          </p>
         </div>
       </div>
     </div>

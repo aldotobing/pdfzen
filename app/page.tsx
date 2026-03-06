@@ -28,6 +28,7 @@ import { PDFDocument } from "pdf-lib";
 import type { CompressionLevel } from "@/types";
 import { compressPDF } from "@/utils/pdfCompressor";
 import { mergePDFs } from "@/utils/pdfMerger";
+import { convertPdfToGrayscale, flattenPdf } from "@/utils/pdfPageEditor";
 import SplashScreen from "@/components/splash/SplashScreen";
 import { useOneTimeSplash } from "@/hooks/use-one-time-splash";
 import PageEditor from "@/components/PageEditor";
@@ -124,6 +125,9 @@ export default function HomePage() {
   const [editingFile, setEditingFile] = useState<File | null>(null);
   const [securityFile, setSecurityFile] = useState<File | null>(null);
   const [convertFile, setConvertFile] = useState<File | null>(null);
+  const [showOptimizations, setShowOptimizations] = useState(false);
+  const [optimizeGrayscale, setOptimizeGrayscale] = useState(false);
+  const [optimizeFlatten, setOptimizeFlatten] = useState(false);
   const { showSplash, appReady } = useOneTimeSplash({ durationMs: 1800 });
 
   const clearCompressionResults = useCallback(() => {
@@ -275,29 +279,49 @@ export default function HomePage() {
       const results: CompressionResult[] = [];
 
       for (const entry of files) {
-        const blob = await compressPDF(entry.file, compressionLevel, (progress) => {
+        let processedBlob = await compressPDF(entry.file, compressionLevel, (progress) => {
           setProgressMap((prev) => ({ ...prev, [entry.id]: progress }));
         });
+
+        // Apply grayscale optimization if enabled
+        if (optimizeGrayscale) {
+          const grayscaleBlob = await convertPdfToGrayscale(
+            new File([processedBlob], entry.file.name, { type: "application/pdf" })
+          );
+          processedBlob = grayscaleBlob;
+        }
+
+        // Apply flattening if enabled
+        if (optimizeFlatten) {
+          const flattenedBlob = await flattenPdf(
+            new File([processedBlob], entry.file.name, { type: "application/pdf" })
+          );
+          processedBlob = flattenedBlob;
+        }
 
         results.push({
           id: entry.id,
           name: entry.file.name,
           originalSize: entry.file.size,
-          compressedSize: blob.size,
-          blob,
-          url: URL.createObjectURL(blob),
+          compressedSize: processedBlob.size,
+          blob: processedBlob,
+          url: URL.createObjectURL(processedBlob),
         });
       }
 
       setCompressionResults(results);
-      setNotice(`Compression complete for ${results.length} file${results.length > 1 ? "s" : ""}.`);
+      const optNotes = [];
+      if (optimizeGrayscale) optNotes.push("grayscale");
+      if (optimizeFlatten) optNotes.push("flattened");
+      const note = optNotes.length > 0 ? ` (${optNotes.join(", ")})` : "";
+      setNotice(`Compression complete for ${results.length} file${results.length > 1 ? "s" : ""}${note}.`);
     } catch (error) {
       console.error(error);
       setNotice("Compression failed for one or more files.");
     } finally {
       setIsWorking(false);
     }
-  }, [clearCompressionResults, clearMergeResult, compressionLevel, files]);
+  }, [clearCompressionResults, clearMergeResult, compressionLevel, files, optimizeGrayscale, optimizeFlatten]);
 
   const handleZipDownload = useCallback(async () => {
     if (!compressionResults.length) return;
@@ -592,6 +616,72 @@ export default function HomePage() {
                           </button>
                         );
                       })}
+                    </div>
+
+                    {/* Advanced Optimization Options */}
+                    <div className="mt-4 border border-slate-200 rounded-lg overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={() => setShowOptimizations(!showOptimizations)}
+                        className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 hover:bg-slate-100 transition"
+                      >
+                        <div className="flex items-center gap-2">
+                          <WandSparkles size={16} className="text-slate-600" />
+                          <span className="text-sm font-medium text-slate-700">Advanced Optimization</span>
+                        </div>
+                        <motion.div
+                          animate={{ rotate: showOptimizations ? 180 : 0 }}
+                          transition={{ duration: 0.2 }}
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M6 9l6 6 6-6" />
+                          </svg>
+                        </motion.div>
+                      </button>
+
+                      <AnimatePresence>
+                        {showOptimizations && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: "auto", opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="overflow-hidden"
+                          >
+                            <div className="px-4 py-3 space-y-3 bg-white">
+                              <label className="flex items-start gap-3 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={optimizeGrayscale}
+                                  onChange={(e) => setOptimizeGrayscale(e.target.checked)}
+                                  className="mt-0.5 w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                                />
+                                <div className="flex-1">
+                                  <p className="text-sm font-medium text-slate-700">Grayscale Mode</p>
+                                  <p className="text-xs text-slate-500 mt-0.5">
+                                    Convert to black & white to save ink and reduce file size
+                                  </p>
+                                </div>
+                              </label>
+
+                              <label className="flex items-start gap-3 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={optimizeFlatten}
+                                  onChange={(e) => setOptimizeFlatten(e.target.checked)}
+                                  className="mt-0.5 w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                                />
+                                <div className="flex-1">
+                                  <p className="text-sm font-medium text-slate-700">Flatten PDF</p>
+                                  <p className="text-xs text-slate-500 mt-0.5">
+                                    Convert form fields and annotations to static content
+                                  </p>
+                                </div>
+                              </label>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </div>
 
                     <button

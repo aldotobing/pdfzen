@@ -231,6 +231,7 @@ export async function removePdfPassword(
 
 export interface WatermarkOptions {
   text?: string;
+  image?: File;
   fontSize?: number;
   color?: { r: number; g: number; b: number };
   opacity?: number;
@@ -480,6 +481,99 @@ export async function convertImagesToPdf(
       height: imgHeight,
     });
   }
+  
+  const pdfBytes = await pdfDoc.save();
+  return new Blob([pdfBytes.buffer as ArrayBuffer], { type: "application/pdf" });
+}
+
+/**
+ * Convert PDF to grayscale (black and white).
+ * @param file - The source PDF file
+ * @param scale - Scale factor for rendering (higher = better quality but larger file)
+ * @returns A Blob representing the grayscale PDF
+ */
+export async function convertPdfToGrayscale(
+  file: File,
+  scale: number = 1.5
+): Promise<Blob> {
+  // Load PDF.js from CDN
+  const pdfjsLib = await loadPDFJSFromCDN();
+  
+  const arrayBuffer = await file.arrayBuffer();
+  const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+  const pdfDoc = await loadingTask.promise;
+  const totalPages = pdfDoc.numPages;
+  
+  // Create new PDF
+  const newPdf = await PDFDocument.create();
+  
+  for (let i = 0; i < totalPages; i++) {
+    const page = await pdfDoc.getPage(i + 1);
+    const viewport = page.getViewport({ scale });
+    
+    // Render page to canvas
+    const canvas = document.createElement("canvas");
+    canvas.height = viewport.height;
+    canvas.width = viewport.width;
+    
+    const context = canvas.getContext("2d");
+    if (context) {
+      await page.render({
+        canvasContext: context,
+        viewport: viewport,
+      }).promise;
+      
+      // Convert to grayscale using canvas filter
+      const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
+      
+      for (let j = 0; j < data.length; j += 4) {
+        // Calculate grayscale value using luminance formula
+        const gray = 0.299 * data[j] + 0.587 * data[j + 1] + 0.114 * data[j + 2];
+        data[j] = gray;     // Red
+        data[j + 1] = gray; // Green
+        data[j + 2] = gray; // Blue
+        // Alpha stays the same
+      }
+      
+      context.putImageData(imageData, 0, 0);
+      
+      // Convert canvas to PNG and embed in new PDF
+      const pngDataUrl = canvas.toDataURL("image/png");
+      const pngBytes = await fetch(pngDataUrl).then(res => res.arrayBuffer());
+      const pngImage = await newPdf.embedPng(new Uint8Array(pngBytes));
+      
+      // Add page with same dimensions
+      const newPage = newPdf.addPage([viewport.width, viewport.height]);
+      newPage.drawImage(pngImage, {
+        x: 0,
+        y: 0,
+        width: viewport.width,
+        height: viewport.height,
+      });
+    }
+  }
+  
+  const pdfBytes = await newPdf.save();
+  return new Blob([pdfBytes.buffer as ArrayBuffer], { type: "application/pdf" });
+}
+
+/**
+ * Flatten PDF form fields and annotations into static content.
+ * @param file - The source PDF file
+ * @returns A Blob representing the flattened PDF
+ */
+export async function flattenPdf(
+  file: File
+): Promise<Blob> {
+  const arrayBuffer = await file.arrayBuffer();
+  const pdfDoc = await PDFDocument.load(arrayBuffer);
+  
+  // Get the form and flatten all fields
+  const form = pdfDoc.getForm();
+  
+  // Flatten the entire form (this converts all fields to static content)
+  form.flatten();
   
   const pdfBytes = await pdfDoc.save();
   return new Blob([pdfBytes.buffer as ArrayBuffer], { type: "application/pdf" });
