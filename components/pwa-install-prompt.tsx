@@ -132,6 +132,7 @@ export function PWAInstallPrompt() {
           size="icon"
           className="absolute top-2 right-2 h-6 w-6"
           onClick={handleDismiss}
+          aria-label="Dismiss install prompt"
         >
           <X className="h-4 w-4" />
         </Button>

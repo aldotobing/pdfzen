@@ -521,6 +521,8 @@ export default function HomePage() {
 
             <div
               {...getRootProps()}
+              role="button"
+              aria-label="File upload dropzone"
               className={`mt-4 rounded-xl border border-dashed p-5 transition ${
                 isDragActive ? "border-slate-500 bg-slate-100" : "border-slate-300 bg-slate-50"
               }`}
@@ -540,6 +542,7 @@ export default function HomePage() {
                 <button
                   type="button"
                   onClick={open}
+                  aria-label="Browse files"
                   className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
                 >
                   Browse Files
@@ -574,13 +577,13 @@ export default function HomePage() {
                           </div>
 
                           <div className="flex items-center gap-1 flex-shrink-0">
-                            <IconButton onClick={() => moveFile(index, -1)} disabled={index === 0}>
+                            <IconButton onClick={() => moveFile(index, -1)} disabled={index === 0} label="Move up">
                               <ArrowUp size={12} />
                             </IconButton>
-                            <IconButton onClick={() => moveFile(index, 1)} disabled={index === files.length - 1}>
+                            <IconButton onClick={() => moveFile(index, 1)} disabled={index === files.length - 1} label="Move down">
                               <ArrowDown size={12} />
                             </IconButton>
-                            <IconButton onClick={() => removeFile(entry.id)} danger>
+                            <IconButton onClick={() => removeFile(entry.id)} danger label="Remove file">
                               <Trash2 size={12} />
                             </IconButton>
                           </div>
@@ -1099,17 +1102,20 @@ function IconButton({
   onClick,
   disabled,
   danger,
+  label,
 }: {
   children: React.ReactNode;
   onClick: () => void;
   disabled?: boolean;
   danger?: boolean;
+  label?: string;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
+      aria-label={label}
       className={`rounded-md border p-1.5 transition disabled:opacity-30 ${
         danger
           ? "border-slate-200 text-rose-600 hover:bg-rose-50"
